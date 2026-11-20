@@ -1,0 +1,16 @@
+{
+  "principals": [
+    {
+      "principal": "alice",
+      "allowed_marking_ids": ["marking-definition--m1"]
+    },
+    {
+      "principal": "bob",
+      "allowed_marking_ids": ["marking-definition--m1", "marking-definition--m2"]
+    },
+    {
+      "principal": "carol",
+      "allowed_marking_ids": []
+    }
+  ]
+}

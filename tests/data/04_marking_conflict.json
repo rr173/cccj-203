@@ -1,0 +1,14 @@
+{
+  "type": "bundle",
+  "id": "bundle--fixtures-marking-conflict",
+  "spec_version": "2.1",
+  "objects": [
+    {
+      "type": "marking-definition",
+      "spec_version": "2.1",
+      "id": "marking-definition--m1",
+      "created": "2026-01-01T00:00:00.000Z",
+      "definition": {"statement": "DIFFERENT-BODY-SAME-ID"}
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "type": "bundle",
+  "id": "bundle--fixtures-markings",
+  "spec_version": "2.1",
+  "objects": [
+    {
+      "type": "marking-definition",
+      "spec_version": "2.1",
+      "id": "marking-definition--m1",
+      "created": "2026-01-01T00:00:00.000Z",
+      "definition": {"statement": "opaque-label-M1"}
+    },
+    {
+      "type": "marking-definition",
+      "spec_version": "2.1",
+      "id": "marking-definition--m2",
+      "created": "2026-01-01T00:00:00.000Z",
+      "definition": {"statement": "opaque-label-M2"}
+    },
+    {
+      "type": "marking-definition",
+      "spec_version": "2.1",
+      "id": "marking-definition--m3",
+      "created": "2026-01-01T00:00:00.000Z",
+      "definition": {"statement": "opaque-label-M3"}
+    },
+    {
+      "type": "marking-definition",
+      "spec_version": "2.1",
+      "id": "marking-definition--m4",
+      "created": "2026-01-01T00:00:00.000Z",
+      "definition": {"statement": "opaque-label-M4-never-granted"}
+    }
+  ]
+}

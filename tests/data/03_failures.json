@@ -1,0 +1,94 @@
+{
+  "type": "bundle",
+  "id": "bundle--fixtures-failures",
+  "spec_version": "2.1",
+  "objects": [
+    {
+      "type": "indicator",
+      "spec_version": "2.1",
+      "id": "indicator--BADSEL",
+      "created": "2026-01-05T00:00:00.000Z",
+      "modified": "2026-02-01T00:00:00.000Z",
+      "name": "invalid-selector-case",
+      "pattern": "[file:name = 'badsel']",
+      "labels": ["x"],
+      "granular_markings": [
+        {"marking_ref": "marking-definition--m1", "selectors": ["labels.[9]"]}
+      ]
+    },
+    {
+      "type": "indicator",
+      "spec_version": "2.1",
+      "id": "indicator--UNKMARK",
+      "created": "2026-01-05T00:00:00.000Z",
+      "modified": "2026-02-01T00:00:00.000Z",
+      "name": "unknown-marking-case",
+      "pattern": "[file:name = 'unk']",
+      "labels": ["u"],
+      "object_marking_refs": ["marking-definition--does-not-exist"]
+    },
+    {
+      "type": "indicator",
+      "spec_version": "2.1",
+      "id": "indicator--IDHIDE",
+      "created": "2026-01-05T00:00:00.000Z",
+      "modified": "2026-02-01T00:00:00.000Z",
+      "name": "identity-field-hidden-case",
+      "pattern": "[file:name = 'idh']",
+      "labels": ["i"],
+      "granular_markings": [
+        {"marking_ref": "marking-definition--m1", "selectors": ["modified"]}
+      ]
+    },
+    {
+      "type": "indicator",
+      "spec_version": "2.1",
+      "id": "indicator--NEST",
+      "created": "2026-01-05T00:00:00.000Z",
+      "modified": "2026-02-01T00:00:00.000Z",
+      "name": "nested-array-case",
+      "pattern": "[file:name = 'nest']",
+      "labels": ["n0", "n1-secret", "n2", "n3"],
+      "external_references": [
+        {"source_name": "ref-0-public", "url": "https://example.test/0"},
+        {"source_name": "ref-1-secret", "url": "https://example.test/1"},
+        {"source_name": "ref-2-public", "url": "https://example.test/2"}
+      ],
+      "granular_markings": [
+        {"marking_ref": "marking-definition--m1",
+         "selectors": ["labels.[1]", "external_references.[1]"]}
+      ]
+    },
+    {
+      "type": "indicator",
+      "spec_version": "2.1",
+      "id": "indicator--OBJREF",
+      "created": "2026-01-05T00:00:00.000Z",
+      "modified": "2026-02-01T00:00:00.000Z",
+      "name": "object-level-m4-case",
+      "pattern": "[file:name = 'objref']",
+      "labels": ["m4"],
+      "object_marking_refs": ["marking-definition--m4"]
+    },
+    {
+      "type": "malware",
+      "spec_version": "2.1",
+      "id": "malware--PUBLIC-MW",
+      "created": "2026-01-05T00:00:00.000Z",
+      "modified": "2026-02-01T00:00:00.000Z",
+      "name": "public-malware",
+      "is_family": true,
+      "labels": ["public-malware-label"]
+    },
+    {
+      "type": "relationship",
+      "spec_version": "2.1",
+      "id": "relationship--PUBLIC-EDGE",
+      "created": "2026-01-05T00:00:00.000Z",
+      "modified": "2026-02-01T00:00:00.000Z",
+      "relationship_type": "indicates",
+      "source_ref": "indicator--NEST",
+      "target_ref": "malware--PUBLIC-MW"
+    }
+  ]
+}

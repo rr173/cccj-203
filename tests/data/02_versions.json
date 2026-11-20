@@ -1,0 +1,139 @@
+{
+  "type": "bundle",
+  "id": "bundle--fixtures-versions",
+  "spec_version": "2.1",
+  "objects": [
+    {
+      "type": "indicator",
+      "spec_version": "2.1",
+      "id": "indicator--V",
+      "created": "2026-01-01T00:00:00.000Z",
+      "modified": "2026-01-10T00:00:00.000Z",
+      "name": "V-v1",
+      "pattern": "[file:name = 'v1']",
+      "labels": ["versioned"]
+    },
+    {
+      "type": "indicator",
+      "spec_version": "2.1",
+      "id": "indicator--V",
+      "created": "2026-01-01T00:00:00.000Z",
+      "modified": "2026-01-20T00:00:00.000Z",
+      "name": "V-v2",
+      "pattern": "[file:name = 'v2']",
+      "labels": ["versioned"]
+    },
+    {
+      "type": "indicator",
+      "spec_version": "2.1",
+      "id": "indicator--V",
+      "created": "2026-01-01T00:00:00.000Z",
+      "modified": "2026-02-10T00:00:00.000Z",
+      "name": "V-v3-future",
+      "pattern": "[file:name = 'v3']",
+      "labels": ["versioned"]
+    },
+    {
+      "type": "indicator",
+      "spec_version": "2.1",
+      "id": "indicator--K",
+      "created": "2026-01-01T00:00:00.000Z",
+      "modified": "2026-01-10T00:00:00.000Z",
+      "name": "K-before-conflict",
+      "pattern": "[file:name = 'k0']",
+      "labels": ["conflict-case"]
+    },
+    {
+      "type": "indicator",
+      "spec_version": "2.1",
+      "id": "indicator--K",
+      "created": "2026-01-01T00:00:00.000Z",
+      "modified": "2026-01-15T00:00:00.000Z",
+      "name": "K-conflict-A",
+      "pattern": "[file:name = 'kA']",
+      "labels": ["conflict-case"]
+    },
+    {
+      "type": "indicator",
+      "spec_version": "2.1",
+      "id": "indicator--K",
+      "created": "2026-01-01T00:00:00.000Z",
+      "modified": "2026-01-15T00:00:00.000Z",
+      "name": "K-conflict-B-different-body",
+      "pattern": "[file:name = 'kB']",
+      "labels": ["conflict-case"]
+    },
+    {
+      "type": "indicator",
+      "spec_version": "2.1",
+      "id": "indicator--K",
+      "created": "2026-01-01T00:00:00.000Z",
+      "modified": "2026-01-25T00:00:00.000Z",
+      "name": "K-resolved-newer-version",
+      "pattern": "[file:name = 'k2']",
+      "labels": ["conflict-case"]
+    },
+    {
+      "type": "indicator",
+      "spec_version": "2.1",
+      "id": "indicator--X",
+      "created": "2026-01-01T00:00:00.000Z",
+      "modified": "2026-01-10T00:00:00.000Z",
+      "name": "X-alive",
+      "pattern": "[file:name = 'x1']",
+      "labels": ["revoke-case"]
+    },
+    {
+      "type": "indicator",
+      "spec_version": "2.1",
+      "id": "indicator--X",
+      "created": "2026-01-01T00:00:00.000Z",
+      "modified": "2026-01-20T00:00:00.000Z",
+      "name": "X-revoked",
+      "pattern": "[file:name = 'x2']",
+      "labels": ["revoke-case"],
+      "revoked": true
+    },
+    {
+      "type": "indicator",
+      "spec_version": "2.1",
+      "id": "indicator--Y",
+      "created": "2026-01-01T00:00:00.000Z",
+      "modified": "2026-01-10T00:00:00.000Z",
+      "name": "Y-alive",
+      "pattern": "[file:name = 'y1']",
+      "labels": ["recovery-case"]
+    },
+    {
+      "type": "indicator",
+      "spec_version": "2.1",
+      "id": "indicator--Y",
+      "created": "2026-01-01T00:00:00.000Z",
+      "modified": "2026-01-20T00:00:00.000Z",
+      "name": "Y-revoked",
+      "pattern": "[file:name = 'y2']",
+      "labels": ["recovery-case"],
+      "revoked": true
+    },
+    {
+      "type": "indicator",
+      "spec_version": "2.1",
+      "id": "indicator--Y",
+      "created": "2026-01-01T00:00:00.000Z",
+      "modified": "2026-02-05T00:00:00.000Z",
+      "name": "Y-illegal-recovery",
+      "pattern": "[file:name = 'y3']",
+      "labels": ["recovery-case"]
+    },
+    {
+      "type": "indicator",
+      "spec_version": "2.1",
+      "id": "indicator--BADTIME",
+      "created": "2026-03-01T00:00:00.000Z",
+      "modified": "2026-02-01T00:00:00.000Z",
+      "name": "created-after-modified",
+      "pattern": "[file:name = 'bad']",
+      "labels": ["invalid-time"]
+    }
+  ]
+}

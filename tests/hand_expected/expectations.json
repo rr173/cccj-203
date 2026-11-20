@@ -1,0 +1,91 @@
+{
+  "_note": "Hand-written expectations for the authorization matrix. These literals were written before running the gate; tests/run_verify.py checks the actual projection against them. No adjudicator/oracle generated these.",
+  "collection": "C1",
+  "query_time": "2026-02-01T00:00:00Z",
+  "principals": {
+    "alice": {
+      "granted": ["marking-definition--m1"],
+      "indicator--O": {
+        "visible": true,
+        "labels": ["public-word", "SECRET-LABEL-S-M1", "public-word-T"],
+        "description_present": false,
+        "redacted_contains": ["description", "granular_markings"],
+        "search_secret_S_exact_hits": 1,
+        "search_secret_S_substring_hits": 1,
+        "edge_to_malware--T_visible": false
+      },
+      "indicator--OV": {
+        "name_present": false,
+        "reason": "name carries BOTH M1 and M2; alice lacks M2"
+      },
+      "malware--T": {"visible": false, "reason": "object-level M3 only"}
+    },
+    "bob": {
+      "granted": ["marking-definition--m1", "marking-definition--m2"],
+      "indicator--O": {
+        "visible": true,
+        "labels": ["public-word", "SECRET-LABEL-S-M1", "public-word-T"],
+        "description_present": true,
+        "description_value": "SECRET-DESCRIPTION-M2",
+        "redacted": [],
+        "search_secret_S_exact_hits": 1
+      },
+      "indicator--OV": {"name_present": true, "name_value": "STACKED-MARKING-NAME"},
+      "malware--T": {"visible": false, "reason": "bob still lacks M3"}
+    },
+    "carol": {
+      "granted": [],
+      "indicator--O": {
+        "visible": true,
+        "labels": ["public-word", null, "public-word-T"],
+        "labels_index_1": null,
+        "labels_index_2": "public-word-T",
+        "description_present": false,
+        "redacted_contains": ["labels.[1]", "description", "granular_markings"],
+        "search_secret_S_exact_hits": 0,
+        "search_secret_S_substring_hits": 0,
+        "search_null_literal_hits": 0,
+        "search_public_T_hits": 1,
+        "search_hidden_description_hits": 0
+      },
+      "indicator--NEST": {
+        "labels": ["n0", null, "n2", "n3"],
+        "external_references_1": null,
+        "external_references_2_source_name": "ref-2-public"
+      },
+      "malware--T": {"visible": false, "identity_echoed": false}
+    }
+  },
+  "time_views": {
+    "indicator--V": {
+      "2026-01-15T00:00:00Z": "V-v1",
+      "2026-01-25T00:00:00Z": "V-v2",
+      "2026-02-01T00:00:00Z": "V-v2 (v3 modified 02-10 is a future version, not visible)",
+      "2026-03-01T00:00:00Z": "V-v3-future"
+    },
+    "indicator--K": {
+      "2026-01-12T00:00:00Z": "K-before-conflict (old exact history still readable)",
+      "2026-01-16T00:00:00Z": "UNAVAILABLE conflict (two canonical bodies share modified 01-15)",
+      "2026-01-26T00:00:00Z": "K-resolved-newer-version"
+    },
+    "indicator--X": {
+      "2026-01-10T00:00:00Z": "X-alive (pre-revoke history readable at its own time)",
+      "2026-01-21T00:00:00Z": "UNAVAILABLE revoked"
+    },
+    "indicator--Y": {
+      "2026-01-21T00:00:00Z": "UNAVAILABLE revoked",
+      "2026-02-06T00:00:00Z": "UNAVAILABLE business conflict (revoked=true changed back to false; profile defines no recovery)"
+    },
+    "indicator--BADTIME": {"any_time": "UNAVAILABLE (created later than modified)"}
+  },
+  "global_blocks": {
+    "indicator--BADSEL": "invalid selector labels.[9] (index absent in original)",
+    "indicator--UNKMARK": "unknown object-level marking id",
+    "indicator--IDHIDE": "granular marking hides identity field 'modified'",
+    "indicator--OBJREF": "object-level M4 granted to nobody"
+  },
+  "edges": {
+    "relationship--R": "emitted only when indicator--O AND malware--T both visible; only a principal holding M3 could see it, so alice/bob/carol all get zero edges and no echo of malware--T body",
+    "relationship--PUBLIC-EDGE": "indicator--NEST -> malware--PUBLIC-MW, both public, visible to every principal with count 1"
+  }
+}
