@@ -15,16 +15,21 @@ sg/                      产品代码（纯标准库，无第三方依赖）
   redact.py              投影渲染（删属性 / 数组元素 null 占位）
   store.py               受保护源仓：stage/finalize、版本选择、诊断
   projection.py          隔离投影 SQLite、检索索引、分页令牌、引用边
+  master.py              实体主数据仓：人工裁定分组、四表、修订变更流、访问计数
   cli.py                 命令行入口
 sg-cli.py                启动器（python -I 安全运行）
 tests/
   data/                  合成 STIX bundle 与 policy.json（全部人造数据）
   hand_expected/         手写每人每时点预期（不由裁定器生成）
+  master_fixtures.py     主数据仓核验用合成投影包生成器（人造数据）
+  run_master_verify.py   主数据仓端到端核验（95 项，含并发/崩溃/规模访问范围）
   run_unit_verify.py     selector/redact 单元核验（25 项）
   run_verify.py          端到端核验（75 项）
   run_atomic_verify.py   原子性核验（10 项）
   run_bulk_verify.py     大数据量流式/内存核验（18 项）
   gen_bulk.py            生成大量嵌套数组合成对象
+docs/
+  master_warehouse.md    主数据仓 SQLite 格式、增量范围与错误码说明
 ```
 
 ## 2. 核心语义（与需求逐条对应）
@@ -154,6 +159,61 @@ python3 -I sg-cli.py reopen --package runtime/exported_carol.sqlite \
   search --field labels --match exact --term public-word-T
 ```
 
+## 3a. 实体主数据仓（人工裁定别名归并）
+
+主数据仓只接受**一个** `export` 投影包，建仓即修订 0，之后不换包、不跨分析员
+拼包，也不再需要原始库或策略文件；原有接入/投影/检索命令完全不变。别名只来自
+人工裁定批次，系统不猜测、不求最大合并数。格式与增量范围见
+[`docs/master_warehouse.md`](docs/master_warehouse.md)。
+
+```bash
+# (11) 用一个导出包建立主数据仓（顺序扫包一次，原子落盘）
+python3 -I sg-cli.py master-build \
+  --package runtime/exported_carol.sqlite \
+  --master runtime/master_carol.sqlite
+
+# (12) 应用裁定批次（批号唯一、带预期父修订号；整批先形成新有效集合再发布）
+cat > /tmp/batch1.json <<'JSON'
+{"batch_id":"B1","expected_parent":0,"operations":[
+  {"op":"put","verdict_id":"V-AB","kind":"same",
+   "a":"indicator--A","b":"indicator--B","priority":3},
+  {"op":"put","verdict_id":"V-AD","kind":"different",
+   "a":"indicator--A","b":"indicator--D"},
+  {"op":"retract","verdict_id":"V-OLD"}]}
+JSON
+python3 -I sg-cli.py master-apply \
+  --master runtime/master_carol.sqlite --batch /tmp/batch1.json
+# 收据含 published_revision、change_count 与分阶段 access 访问计数；
+# 同批号同字节重送返回原修订（deduplicated:true），不重新应用。
+
+# (13) 一次一致性读取四张逻辑表与同一个修订号（也可 --table 单表、--jsonl）
+python3 -I sg-cli.py master-read --master runtime/master_carol.sqlite
+python3 -I sg-cli.py master-read --master runtime/master_carol.sqlite \
+  --table verdicts --jsonl
+
+# (14) 按已提交修订读取确定顺序的 JSONL 变更（含父号/新号、表、行键、删除/替换）
+python3 -I sg-cli.py master-changes --master runtime/master_carol.sqlite \
+  --from 1 --to 2
+
+# (15) 修订链与建仓包摘要/上下文
+python3 -I sg-cli.py master-revisions --master runtime/master_carol.sqlite
+python3 -I sg-cli.py master-context  --master runtime/master_carol.sqlite
+```
+
+四张逻辑表（稳定行键）：
+
+| 表 | 行键 | 含义 |
+| --- | --- | --- |
+| `entity_map` | 原对象 ID | 原对象 → 组主键（组内 UTF-8 字节最小 ID） |
+| `relations` | `(源主键, 关系类型, 目标主键)` | 归并有向关系与贡献数；双向不同行，自环带标识 |
+| `contributions` | 原关系 ID | 原关系 → 归并键的贡献明细，含可回查原版坐标 |
+| `verdicts` | 裁定 ID | 有效裁定及 `merged/already-same/blocked/constraint` 结果与阻挡证据 |
+
+下游从一次完整读取取得四表与同一修订号，之后逐个消费 `master-changes`
+即可恢复到最新内容，无需自行重算实体；未变化的行不会重发。后续批次只重算
+变动端点经 `same` 候选（含被挡候选）可达的封闭区域，不重新扫包、不全量重算
+分组、不全表扫描结果表（收据 `access` 与 EXPLAIN QUERY PLAN 可核查）。
+
 ## 4. 一键独立核验
 
 ```bash
@@ -161,6 +221,14 @@ python3 -I tests/run_unit_verify.py     # 25 项：selector/redact 规则
 python3 -I tests/run_verify.py          # 75 项：端到端授权矩阵/版本/边/令牌/导出
 python3 -I tests/run_atomic_verify.py   # 10 项：失败不留半投影、中断不发代号
 python3 -I tests/run_bulk_verify.py     # 18 项：2 万对象嵌套数组、内存有界
+python3 -I tests/run_master_verify.py   # 95 项：主数据仓裁定/变更流/并发/崩溃/访问范围
+```
+
+主数据仓规模核验的无关分区数量可用环境变量调整（大库只在临时目录运行时生成，
+不随仓库提交），用于证明纠错访问范围不随无关数据扩大：
+
+```bash
+SG_MASTER_SCALE=2000 python3 -I tests/run_master_verify.py
 ```
 
 大数据量可用环境变量调整规模：

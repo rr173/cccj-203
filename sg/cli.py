@@ -19,6 +19,7 @@ from .util import SGError, parse_time, dt_to_key
 from . import store as S
 from . import projection as P
 from . import markings as M
+from . import master as MD
 
 
 def _now():
@@ -219,6 +220,65 @@ def cmd_collections(args):
             "stages": json.loads(r["stage_list"])} for r in rows])
 
 
+# ----------------------------------------------------------- master warehouse ----
+
+def cmd_master_build(args):
+    stats = MD.build_master(args.package, args.master)
+    stats["package_context"] = MD.package_context(args.master)
+    _emit(stats)
+
+
+def cmd_master_apply(args):
+    with open(args.batch, "rb") as fh:
+        raw = fh.read()
+    receipt = MD.apply_batch(args.master, raw)
+    if args.quiet:
+        _emit({"batch_id": receipt["batch_id"],
+               "published_revision": receipt["published_revision"],
+               "deduplicated": receipt["deduplicated"]})
+    else:
+        _emit(receipt)
+
+
+def cmd_master_read(args):
+    snapshot = MD.read_all(args.master)
+    if args.table:
+        if args.table not in snapshot["tables"]:
+            raise SGError("unknown-table", "no such logical table")
+        if args.jsonl:
+            for row in snapshot["tables"][args.table]:
+                sys.stdout.write(json.dumps(row, ensure_ascii=False) + "\n")
+        else:
+            _emit({"revision": snapshot["revision"],
+                   "table": args.table,
+                   "rows": snapshot["tables"][args.table]})
+        return
+    if args.jsonl:
+        sys.stdout.write(json.dumps(
+            {"type": "snapshot_header", "revision": snapshot["revision"]},
+            ensure_ascii=False) + "\n")
+        for table_name in MD.TABLE_ORDER:
+            for row in snapshot["tables"][table_name]:
+                sys.stdout.write(json.dumps(
+                    {"type": "row", "table": table_name, "row": row},
+                    ensure_ascii=False) + "\n")
+    else:
+        _emit(snapshot)
+
+
+def cmd_master_changes(args):
+    for item in MD.read_changes(args.master, args.from_revision, args.to_revision):
+        sys.stdout.write(json.dumps(item, ensure_ascii=False) + "\n")
+
+
+def cmd_master_revisions(args):
+    _emit(MD.list_revisions(args.master))
+
+
+def cmd_master_context(args):
+    _emit(MD.package_context(args.master))
+
+
 # ------------------------------------------------------------------- parser ----
 
 def build_parser():
@@ -312,6 +372,45 @@ def build_parser():
     sp.add_argument("--id")
     sp.add_argument("--direction", default="both")
     sp.set_defaults(func=cmd_reopen)
+
+    # --------------------------------------------------- master-data warehouse ----
+    sp = sub.add_parser("master-build",
+                        help="bind one exported projection package into a revision-0 master warehouse")
+    sp.add_argument("--package", required=True)
+    sp.add_argument("--master", required=True)
+    sp.set_defaults(func=cmd_master_build)
+
+    sp = sub.add_parser("master-apply",
+                        help="apply one validated adjudication batch as a new revision")
+    sp.add_argument("--master", required=True)
+    sp.add_argument("--batch", required=True)
+    sp.add_argument("--quiet", action="store_true")
+    sp.set_defaults(func=cmd_master_apply)
+
+    sp = sub.add_parser("master-read",
+                        help="read the four logical tables at one committed revision")
+    sp.add_argument("--master", required=True)
+    sp.add_argument("--table", choices=list(MD.TABLE_ORDER),
+                    help="read one logical table instead of the whole snapshot")
+    sp.add_argument("--jsonl", action="store_true",
+                    help="emit JSONL instead of one JSON document")
+    sp.set_defaults(func=cmd_master_read)
+
+    sp = sub.add_parser("master-changes",
+                        help="stream ordered JSONL change records for a revision range")
+    sp.add_argument("--master", required=True)
+    sp.add_argument("--from", dest="from_revision", required=True, type=int)
+    sp.add_argument("--to", dest="to_revision", required=True, type=int)
+    sp.set_defaults(func=cmd_master_changes)
+
+    sp = sub.add_parser("master-revisions", help="list committed revisions")
+    sp.add_argument("--master", required=True)
+    sp.set_defaults(func=cmd_master_revisions)
+
+    sp = sub.add_parser("master-context",
+                        help="show the sealed package summary and context bound to this warehouse")
+    sp.add_argument("--master", required=True)
+    sp.set_defaults(func=cmd_master_context)
     return p
 
 
@@ -326,6 +425,9 @@ def main(argv=None):
         return _fail(SGError("file-not-found", "a required input file is missing"))
     except json.JSONDecodeError:
         return _fail(SGError("invalid-json", "input document is not valid JSON"))
+    except sqlite3.Error:
+        # Never surface raw SQLite text: it can embed file paths or row data.
+        return _fail(SGError("storage-error", "the SQLite store could not complete the operation"))
     return 0
 
 
