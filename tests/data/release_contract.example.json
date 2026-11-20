@@ -1,0 +1,72 @@
+{
+  "schema": "stix-gate-master-release-contract/1",
+  "relationship_types": [
+    "indicates",
+    "communicates-with",
+    "uses"
+  ],
+  "exclude_entity_ids": [],
+  "requirement_groups": [
+    {
+      "id": "G-IND-OUT",
+      "alternatives": [
+        {
+          "id": "A-IND-OUT",
+          "direction": "out",
+          "relationship_types": [
+            "indicates"
+          ],
+          "peer_types": [
+            "indicator"
+          ],
+          "min_distinct_peers": 1
+        }
+      ]
+    },
+    {
+      "id": "G-MAL-OUT",
+      "alternatives": [
+        {
+          "id": "A-MAL-CW",
+          "direction": "out",
+          "relationship_types": [
+            "communicates-with"
+          ],
+          "peer_types": [
+            "indicator",
+            "malware"
+          ],
+          "min_distinct_peers": 2
+        },
+        {
+          "id": "A-MAL-USES",
+          "direction": "out",
+          "relationship_types": [
+            "uses"
+          ],
+          "peer_types": [
+            "indicator",
+            "malware"
+          ],
+          "min_distinct_peers": 2
+        }
+      ]
+    }
+  ],
+  "named_requirement_sets": [
+    {
+      "id": "SET-IND",
+      "entity_type": "indicator",
+      "groups": [
+        "G-IND-OUT"
+      ]
+    },
+    {
+      "id": "SET-MAL",
+      "entity_type": "malware",
+      "groups": [
+        "G-MAL-OUT"
+      ]
+    }
+  ]
+}

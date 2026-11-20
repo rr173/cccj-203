@@ -21,6 +21,7 @@ from . import projection as P
 from . import markings as M
 from . import master as MD
 from . import impact as IMP
+from . import release as REL
 
 
 def _now():
@@ -298,6 +299,110 @@ def cmd_master_impact_page(args):
     sys.stdout.write(json.dumps(envelope, ensure_ascii=False) + "\n")
 
 
+# --------------------------------------------------------- master release ----
+
+def cmd_master_release(args):
+    """Build a loadable package from one head view and a quality contract."""
+    with open(args.contract, "rb") as fh:
+        raw = fh.read()
+    contract = REL.load_contract_bytes(raw)
+    result = REL.build_package(args.master, contract, args.output)
+    _emit(result)
+
+
+def _open_release(path):
+    if not os.path.exists(path):
+        raise SGError("package-missing", "no release package at that path")
+    conn = sqlite3.connect(f"file:{os.path.abspath(path)}?mode=ro", uri=True)
+    conn.row_factory = sqlite3.Row
+    try:
+        tag = conn.execute(
+            "SELECT value FROM package_meta WHERE key='release_schema'").fetchone()
+    except sqlite3.DatabaseError:
+        conn.close()
+        raise SGError("invalid-package", "package is not a readable release")
+    if tag is None or tag[0] != REL.PACKAGE_SCHEMA:
+        conn.close()
+        raise SGError("invalid-package", "package is not a master release")
+    return conn
+
+
+def _release_query(conn, what, package=None, table=None, entity=None, wave=None,
+                   relationship=None):
+    """Read-only queries over a sealed release package."""
+    if what == "manifest":
+        return REL.receipt_from_conn(conn, path=package)
+    if what == "waves":
+        rows = [dict(r) for r in conn.execute(
+            "SELECT wave, phase, evicted_entities, evicted_relations,"
+            " evicted_mappings, evicted_contributions, access_json"
+            " FROM release_waves ORDER BY wave")]
+        for row in rows:
+            row["access"] = json.loads(row.pop("access_json"))
+        return {"waves": rows}
+    if what == "entity":
+        out = {"entity": entity}
+        row = conn.execute(
+            "SELECT * FROM reject_entity_map WHERE master_entity_id=?",
+            (entity,)).fetchone()
+        out["reject"] = dict(row) if row else None
+        if row:
+            out["evictions"] = [
+                dict(r) for r in conn.execute(
+                    "SELECT wave, group_id, alt_id, direction, distinct_peers,"
+                    " min_peers, met FROM eviction_alt_snapshot"
+                    " WHERE entity_id=? ORDER BY wave, group_id, alt_id",
+                    (entity,))]
+            out["relations"] = [
+                dict(r) for r in conn.execute(
+                    "SELECT row_key, eviction_wave, reason FROM reject_relations"
+                    " WHERE source_canon=? OR target_canon=? ORDER BY row_key",
+                    (entity, entity))]
+        return out
+    if what == "relation":
+        row = conn.execute(
+            "SELECT r.*, (SELECT COUNT(*) FROM reject_contributions c"
+            "   WHERE c.row_key=r.row_key) AS rejected_contributions"
+            " FROM reject_relations r WHERE r.row_key=?",
+            (relationship,)).fetchone()
+        return {"relation": dict(row) if row else None}
+    if what == "table":
+        allowed = {"load_entities": "obj_id",
+                   "load_relations": "row_key",
+                   "load_contributions": "relationship_id",
+                   "reject_entity_map": "obj_id",
+                   "reject_relations": "row_key",
+                   "reject_contributions": "relationship_id",
+                   "release_waves": "wave",
+                   "wave_entity_evictions": "entity_id",
+                   "eviction_alt_snapshot": "entity_id"}
+        if table not in allowed:
+            raise SGError("unknown-table", "no such release table")
+        sql = f"SELECT * FROM {table}"
+        params = []
+        if wave is not None and table in (
+                "reject_entity_map", "reject_relations",
+                "reject_contributions", "wave_entity_evictions"):
+            sql += " WHERE eviction_wave=?" if table != "wave_entity_evictions" \
+                else " WHERE wave=?"
+            params.append(wave)
+        sql += f" ORDER BY {allowed[table]}"
+        return {"table": table, "rows": [dict(r) for r in conn.execute(
+            sql, params)]}
+    raise SGError("unsupported-action", "unknown release query")
+
+
+def cmd_master_release_read(args):
+    conn = _open_release(args.package)
+    try:
+        _emit(_release_query(conn, args.what, package=args.package,
+                             table=args.table, entity=args.entity,
+                             wave=args.wave,
+                             relationship=args.relationship))
+    finally:
+        conn.close()
+
+
 # ------------------------------------------------------------------- parser ----
 
 def build_parser():
@@ -454,6 +559,28 @@ def build_parser():
                     help="restrict to a single transition revision within the interval")
     sp.add_argument("--page-token", dest="page_token", default=None)
     sp.set_defaults(func=cmd_master_impact_page)
+
+    # ------------------------------------------------------- master release ----
+    sp = sub.add_parser(
+        "master-release",
+        help="build a loadable SQLite package from one committed head view"
+             " and a JSON quality contract")
+    sp.add_argument("--master", required=True)
+    sp.add_argument("--contract", required=True)
+    sp.add_argument("--output", required=True)
+    sp.set_defaults(func=cmd_master_release)
+
+    sp = sub.add_parser(
+        "master-release-read",
+        help="read a sealed release package (load/reject rows, waves, reasons)")
+    sp.add_argument("--package", required=True)
+    sp.add_argument("--what", required=True,
+                    choices=["manifest", "waves", "entity", "relation", "table"])
+    sp.add_argument("--table", default=None)
+    sp.add_argument("--entity", default=None)
+    sp.add_argument("--relationship", default=None)
+    sp.add_argument("--wave", type=int, default=None)
+    sp.set_defaults(func=cmd_master_release_read)
     return p
 
 
@@ -465,6 +592,8 @@ def main(argv=None):
     except SGError as exc:
         return _fail(exc)
     except FileNotFoundError as exc:
+        return _fail(SGError("file-not-found", "a required input file is missing"))
+    except PermissionError:
         return _fail(SGError("file-not-found", "a required input file is missing"))
     except json.JSONDecodeError:
         return _fail(SGError("invalid-json", "input document is not valid JSON"))

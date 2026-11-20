@@ -17,6 +17,7 @@ sg/                      产品代码（纯标准库，无第三方依赖）
   projection.py          隔离投影 SQLite、检索索引、分页令牌、引用边
   master.py              实体主数据仓：人工裁定分组、四表、修订变更流、访问计数
   impact.py              主数据修订影响分析：修订0重建+变更重放、迁移分量、流式分页
+  release.py             主数据放行包：质量合同准入、波次淘汰账、可装载/拒收两区
   cli.py                 命令行入口
 sg-cli.py                启动器（python -I 安全运行）
 tests/
@@ -26,6 +27,8 @@ tests/
   impact_fixtures.py     影响分析核验用多修订合成仓（合并/撤回拆分/迁移/恢复/规模）
   run_master_verify.py   主数据仓端到端核验（95 项，含并发/崩溃/规模访问范围）
   run_impact_verify.py   修订影响分析核验（124 项，含手写预期/独立重放/流式分页）
+  release_fixtures.py    放行核验用合成投影包与合同（人造数据，含长链/高扇出样例）
+  run_release_verify.py  放行包核验（141 项，含独立逐波枚举/合同误配/并发/访问范围）
   run_unit_verify.py     selector/redact 单元核验（25 项）
   run_verify.py          端到端核验（75 项）
   run_atomic_verify.py   原子性核验（10 项）
@@ -33,6 +36,7 @@ tests/
   gen_bulk.py            生成大量嵌套数组合成对象
 docs/
   master_warehouse.md    主数据仓 SQLite 格式、增量范围与错误码说明
+  master_release.md      放行合同与放行包的表结构、波次语义、装载示例
 ```
 
 ## 2. 核心语义（与需求逐条对应）
@@ -245,6 +249,55 @@ python3 -I sg-cli.py master-impact-page \
 变动端点经 `same` 候选（含被挡候选）可达的封闭区域，不重新扫包、不全量重算
 分组、不全表扫描结果表（收据 `access` 与 EXPLAIN QUERY PLAN 可核查）。
 
+## 3b. 主数据放行包（质量合同准入）
+
+`master-release` 用一份 JSON 质量合同，从主数据仓**当前已提交头修订**生成一个
+可直接装载的 SQLite 包：可装载区只保留通过准入的行，拒收账逐行说明哪一波、
+哪一步失去资格。它不改裁定、不产生新修订，也不是两次修订的差异分析。格式、
+语义与装载示例见 [`docs/master_release.md`](docs/master_release.md)。
+
+```bash
+# (18) 生成放行包（合同、主仓修订号、上游投影标识与合同摘要都写进包）
+python3 -I sg-cli.py master-release \
+  --master runtime/master_carol.sqlite \
+  --contract tests/data/release_contract.example.json \
+  --output runtime/release_carol.sqlite
+
+# (19) 只读查看收据/波次账/逐行理由（不需要主仓）
+python3 -I sg-cli.py master-release-read \
+  --package runtime/release_carol.sqlite --what manifest
+python3 -I sg-cli.py master-release-read \
+  --package runtime/release_carol.sqlite --what entity \
+  --entity malware--M1
+python3 -I sg-cli.py master-release-read \
+  --package runtime/release_carol.sqlite --what table --table reject_relations
+```
+
+要点：
+
+- **准入不由人工裁定替代**：合同只声明允许发出的关系类型、明确排除的主实体
+  ID、按实体类型登记的命名必需组；没有登记必需组的类型不受数量条件限制。
+- **波次语义**：第 0 波先去掉合同明确排除的实体及其关联关系，再去掉不许发的
+  关系类型；第 1 波及以后都对**同一份波前**判断，当波不满足者一起出局，只有
+  下一波才把这次出局算进别人的支撑缺口；每条关系随第一个出局端点出局；没有
+  新出局即稳定。互相支撑的闭环可留下，不要求连到人工选定的根。
+- **对端去重**：规则从归并行认方向，按对端主实体 ID 去重——同一对端点之间
+  不同类型的关系或多条来源贡献只算一个对端；自环不提供支撑，但类型许可且端点
+  留存时照发。
+- **可解释的拒收**：每个自动淘汰的实体记首次出局波、该波未满足的全部必需组、
+  以及各备选项在波前实际的不同对端数与阈值；数字在该波判定时落盘，绝不用
+  最终（可能为空的）图回填。
+- **两区不重不漏**：三类输入行在可装载区与拒收账之间恰好各出现一次；留下的
+  关系两端齐全、贡献可回查、`contribution_count` 与贡献行一致；合法空结果也
+  是可装载包。
+- **稳定可复跑**：同一视图与合同产生相同的逻辑表、理由与 `release_digest`；
+  失败或崩溃不会留下可装载的新包，也不会破坏目标路径上已有的包；并发写入时
+  包内只有一个已提交修订的行，不会混修订。
+- **运维访问量**：支撑事实与逐波计数落在包内；建账后每一波只按主键读“已失去
+  支撑对”的计数行，不再按波扫无关分区，也不会为一个失去的对端重扫整条高扇出
+  邻接表。收据里每波的 `candidate_entities` / `probed_counter_rows` /
+  `lost_support_pairs` 就是可复跑的访问量证据。
+
 ## 4. 一键独立核验
 
 ```bash
@@ -254,6 +307,7 @@ python3 -I tests/run_atomic_verify.py   # 10 项：失败不留半投影、中�
 python3 -I tests/run_bulk_verify.py     # 18 项：2 万对象嵌套数组、内存有界
 python3 -I tests/run_master_verify.py   # 95 项：主数据仓裁定/变更流/并发/崩溃/访问范围
 python3 -I tests/run_impact_verify.py   # 124 项：修订影响分析/迁移分量/净变化/流式分页
+python3 -I tests/run_release_verify.py  # 141 项：放行合同/波次/拒收理由/原子性/访问范围
 ```
 
 主数据仓规模核验的无关分区数量可用环境变量调整（大库只在临时目录运行时生成，
@@ -267,6 +321,12 @@ SG_MASTER_SCALE=2000 python3 -I tests/run_master_verify.py
 
 ```bash
 SG_IMPACT_SCALE=2000 python3 -I tests/run_impact_verify.py
+```
+
+放行核验的长淘汰链、无关稳定分区与高扇出样例默认开大；关闭后用小型样例：
+
+```bash
+SG_RELEASE_SCALE=0 python3 -I tests/run_release_verify.py
 ```
 
 大数据量可用环境变量调整规模：
