@@ -74,6 +74,78 @@
 `tests/run_master_verify.py` 在 0 / 100 / 1000 / 4000 个无关分区下断言纠错
 批次的过滤访问计数完全相同，证明访问范围与无关数据量无关。
 
+## 3a. 主数据修订影响分析（只读，不改动仓内任何裁定/修订/变更）
+
+`sg impact`（CLI `master-impact-summary` / `master-impact-page`）针对同一仓内
+两个**已提交**修订 `s <= e` 生成确定性影响报告。它不假设仓保存任意旧修订的
+完整快照：报告的全部状态只由两条可独立复现的路径构造——
+
+1. 从不可变底稿 `base_objects` / `base_edges` 按建仓规则重建修订 0 四表
+   （每个实体自成一组；每条底稿边按原始端点与关系类型形成贡献键）；
+2. 沿 `changes` 变更流逐修订正向重放（delete/replace、主键迁移、端点贡献
+   关联均按行严格应用）。
+
+重放至头修订的结果必须等于物理头表，`run_impact_verify.py` 对此逐表断言。
+影响分析只访问 `base_objects`、`base_edges`、`changes`、`revisions`、
+`package_meta` 五张表，且对它们零全表扫描（访问计数可核查）。
+
+### 输入绑定与拒绝规则
+
+- 输入绑定仓身份（`warehouse_instance_id` + 包摘要 + 报告版本）与起止修订号；
+- 未知仓 → `master-missing`；未知修订 → `unknown-revision`；反向区间
+  （`s > e`）→ `reversed-range`；不存在“未提交状态”输入，因为修订号只能来自
+  已提交链，引用未提交号一律按未知修订拒绝；
+- `s == e` 返回合法的零影响报告：无转移明细，累计净变化与搅动均为 0；
+- 报告从不声称某条裁定“导致”变化，输出中不出现任何裁定 ID，只陈述相邻已提交
+  修订之间可观察到的关联事实。
+
+### 每个转移（相邻修订对）报告内容
+
+- 对象映射变化：`included` / `exited` / `primary_changed`，逐条给出对象 ID 与
+  前后主实体（canonical id）；底稿不可变，正常运行只出现主实体改变；
+- 实体组数量：前后计数与 delta；
+- 关系键变化：`appeared` / `disappeared` / `modified`（贡献数、自环标记）与
+  `migrations`；
+- 关系贡献数量：逐键 before/after/delta 与区间总贡献数（底稿边不可变，总量守恒）；
+- 关系自环变化：逐条 old/new 键与前后自环标记。
+
+### 关系键迁移的识别（不按旧键删除+新键新增掩盖）
+
+以**原始贡献关系 ID、原始两端点与关系类型**为稳定身份，在旧键与新键之间构造
+二部图（同键保留的贡献同时登记在两侧，使“保留+迁出”的键保持连通），连通分量
+分类为：
+
+- `migrated`：1 旧键 ↔ 1 新键；
+- `split`：1 旧键 → 多新键（一对多，分量内逐边列出保留与迁出的贡献 ID，
+  不猜测唯一对应）；
+- `merge`：多旧键 → 1 新键（多对一）；
+- `complex_remap`：多对多重映射。
+
+每个分量的 `edges` 给出 old/new 键、贡献数与贡献关系 ID；JSONL 的
+`migration_contribution` 行进一步给出该贡献的原始端点、关系类型与前后归并坐标
+（含 `modified_key/modified_raw` 原版坐标），可分页回查。
+
+### 净变化 vs. 期间发生过变化
+
+累计结果**只由两个边界状态的差异**计算；逐转移绝对变化量之和单独记为
+`transition_absolute_churn`，绝不冒充净变化。区间内改变后又恢复的对象/关系：
+
+- 累计净变化为 0，但出现在 `touched` / `reverted`（边界相同）或 `transient`
+  （仅区间内存在）中，并带 `touched_revisions` 指向可定位的逐转移明细。
+
+### 报告形态与分页
+
+- `master-impact-summary`：一份完整 JSON（仓身份、区间、逐转移明细、累计块）；
+- `master-impact-page`：按全局稳定排序键分页的 JSONL 明细（每修订一个连续键
+  块，累计块固定在后），末行为页信封；支持 `--scope`（all/transitions/
+  cumulative）、`--filter-kind`（object/relation/migration/contribution）与
+  `--revision` 过滤；
+- 分页令牌为 HMAC 签名，绑定仓实例、起止修订、过滤条件、页大小与报告版本；
+  篡改、跨查询或跨仓复用均被拒绝（`invalid-page-token` /
+  `page-context-mismatch`），重复读取同一页结果一致；
+- 明细由生成器流式产出，逐转移记录产出即释放（核验用弱引用证明不常驻），
+  进程内存不随全量明细线性增长。
+
 ## 4. 并发与崩溃
 
 - 每个批次以 `BEGIN IMMEDIATE` 打开写事务：两个写者用同一父号提交不同批次，
@@ -92,10 +164,15 @@
 - `stale-parent-revision`：预期父号不是当前头；
 - `batch-id-conflict`：同批号不同字节；
 - `invalid-package` / `integrity-failure` / `master-exists` /
-  `master-missing` / `unknown-revision` / `unknown-table` / `storage-error`。
+  `master-missing` / `unknown-revision` / `unknown-table` / `storage-error`；
+- 影响分析专用：`reversed-range`（起止修订反向）、`invalid-page-token`
+  （分页令牌签名无效或损坏）、`page-context-mismatch`（令牌绑定的仓、区间、
+  过滤条件或页大小与当前查询不符）、`invalid-filter`（非法过滤参数）。
 
 ## 6. 合成数据声明
 
-`tests/master_fixtures.py` 与 `tests/run_master_verify.py` 使用的全部是
-人造 ID（`indicator--A` 等）与合成投影包，不含真实情报数据。大规模数据库在
-测试运行时生成于临时目录，核验结束即删除，不随仓库提交。
+`tests/master_fixtures.py`、`tests/impact_fixtures.py`、
+`tests/run_master_verify.py` 与 `tests/run_impact_verify.py` 使用的全部是
+人造 ID（`indicator--A`、`relationship--R1` 等）与合成投影包，不含真实情报
+数据。大规模数据库在测试运行时生成于临时目录（规模由 `SG_MASTER_SCALE` /
+`SG_IMPACT_SCALE` 控制），核验结束即删除，不随仓库提交。

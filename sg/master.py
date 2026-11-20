@@ -340,6 +340,9 @@ def build_master(package_path: str, master_path: str) -> dict:
             provenance["package_digest_sha256"] = file_digest.hexdigest()
             provenance["package_size_bytes"] = str(os.path.getsize(package_path))
             provenance["warehouse_schema"] = "stix-gate-master/1"
+            # Per-instance identity: two warehouses built from the same package
+            # are still distinct warehouses (e.g. for pagination-token binding).
+            provenance["warehouse_instance_id"] = os.urandom(16).hex()
             provenance["built_at"] = _now()
             conn.executemany("INSERT INTO package_meta(key, value) VALUES(?,?)",
                              sorted(provenance.items()))

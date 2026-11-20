@@ -16,13 +16,16 @@ sg/                      产品代码（纯标准库，无第三方依赖）
   store.py               受保护源仓：stage/finalize、版本选择、诊断
   projection.py          隔离投影 SQLite、检索索引、分页令牌、引用边
   master.py              实体主数据仓：人工裁定分组、四表、修订变更流、访问计数
+  impact.py              主数据修订影响分析：修订0重建+变更重放、迁移分量、流式分页
   cli.py                 命令行入口
 sg-cli.py                启动器（python -I 安全运行）
 tests/
   data/                  合成 STIX bundle 与 policy.json（全部人造数据）
   hand_expected/         手写每人每时点预期（不由裁定器生成）
   master_fixtures.py     主数据仓核验用合成投影包生成器（人造数据）
+  impact_fixtures.py     影响分析核验用多修订合成仓（合并/撤回拆分/迁移/恢复/规模）
   run_master_verify.py   主数据仓端到端核验（95 项，含并发/崩溃/规模访问范围）
+  run_impact_verify.py   修订影响分析核验（124 项，含手写预期/独立重放/流式分页）
   run_unit_verify.py     selector/redact 单元核验（25 项）
   run_verify.py          端到端核验（75 项）
   run_atomic_verify.py   原子性核验（10 项）
@@ -200,6 +203,34 @@ python3 -I sg-cli.py master-revisions --master runtime/master_carol.sqlite
 python3 -I sg-cli.py master-context  --master runtime/master_carol.sqlite
 ```
 
+### 主数据修订影响分析（只读审计报告）
+
+针对同一仓两个**已提交**修订（`--from s --to e`，允许 `s == e` 的合法零影响
+报告）生成确定性影响报告；不修改仓内裁定、修订或变更流，状态仅由修订 0 底稿
+加已提交变更重放构造，不读取任何旧修订完整快照。
+
+```bash
+# (16) 完整 JSON 摘要：逐转移（对象映射/实体组/关系键/贡献数/自环）+ 区间累计。
+#      累计净变化只取两端边界差异；逐转移绝对量之和单列为 churn，绝不冒充净值；
+#      关系键拆分/合并按原始端点+关系类型识别为 split/merge/migrated 分量，
+#      一对多不猜测唯一对应；改变后恢复的对象/关系标 touched/reverted。
+python3 -I sg-cli.py master-impact-summary \
+  --master runtime/master_carol.sqlite --from 1 --to 2
+
+# (17) 稳定排序键分页的 JSONL 明细（末行为页信封），令牌 HMAC 绑定仓/区间/
+#      过滤/页大小/报告版本，篡改或跨查询复用一律拒绝；可按族与转移过滤。
+python3 -I sg-cli.py master-impact-page \
+  --master runtime/master_carol.sqlite --from 0 --to 2 --page-size 100 \
+  --filter-kind migration
+python3 -I sg-cli.py master-impact-page \
+  --master runtime/master_carol.sqlite --from 0 --to 2 \
+  --scope cumulative --revision 2
+```
+
+明细由生成器流式产出（逐转移记录产出即释放，内存不随全量明细线性增长），
+格式与语义细节见 [`docs/master_warehouse.md`](docs/master_warehouse.md) 第 3a 节。
+
+
 四张逻辑表（稳定行键）：
 
 | 表 | 行键 | 含义 |
@@ -222,6 +253,7 @@ python3 -I tests/run_verify.py          # 75 项：端到端授权矩阵/版本/
 python3 -I tests/run_atomic_verify.py   # 10 项：失败不留半投影、中断不发代号
 python3 -I tests/run_bulk_verify.py     # 18 项：2 万对象嵌套数组、内存有界
 python3 -I tests/run_master_verify.py   # 95 项：主数据仓裁定/变更流/并发/崩溃/访问范围
+python3 -I tests/run_impact_verify.py   # 124 项：修订影响分析/迁移分量/净变化/流式分页
 ```
 
 主数据仓规模核验的无关分区数量可用环境变量调整（大库只在临时目录运行时生成，
@@ -229,6 +261,12 @@ python3 -I tests/run_master_verify.py   # 95 项：主数据仓裁定/变更流/
 
 ```bash
 SG_MASTER_SCALE=2000 python3 -I tests/run_master_verify.py
+```
+
+影响分析的大规模流式/分页核验规模可调（运行时合成于临时目录）：
+
+```bash
+SG_IMPACT_SCALE=2000 python3 -I tests/run_impact_verify.py
 ```
 
 大数据量可用环境变量调整规模：

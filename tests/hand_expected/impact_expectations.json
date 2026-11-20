@@ -1,0 +1,176 @@
+{
+  "_note": "Hand-written expectations for master-data revision impact analysis. These literals were derived by manually tracing the fixture batches and the documented build rules (each entity its own canonical group; contribution key from raw endpoints; byte-minimum member is the canonical id). Nothing here is generated from the report implementation; tests/run_impact_verify.py compares the actual report against these literals and against an independent replay consumer.",
+  "fixture": {
+    "entities": ["indicator--A", "indicator--B", "indicator--C", "indicator--D", "indicator--E", "indicator--F", "indicator--G"],
+    "base_edges": [
+      {"relationship_id": "relationship--R1", "source_id": "indicator--A", "target_id": "indicator--E", "relationship_type": "indicates"},
+      {"relationship_id": "relationship--R2", "source_id": "indicator--C", "target_id": "indicator--E", "relationship_type": "indicates"},
+      {"relationship_id": "relationship--R3", "source_id": "indicator--E", "target_id": "indicator--C", "relationship_type": "indicates"},
+      {"relationship_id": "relationship--R4", "source_id": "indicator--A", "target_id": "indicator--B", "relationship_type": "indicates"},
+      {"relationship_id": "relationship--R5", "source_id": "indicator--D", "target_id": "indicator--F", "relationship_type": "indicates"},
+      {"relationship_id": "relationship--R6", "source_id": "indicator--C", "target_id": "indicator--E", "relationship_type": "refers-to"},
+      {"relationship_id": "relationship--R7", "source_id": "indicator--G", "target_id": "indicator--G", "relationship_type": "indicates", "base_self_loop": true},
+      {"relationship_id": "relationship--R8", "source_id": "indicator--C", "target_id": "indicator--E", "relationship_type": "uses"}
+    ]
+  },
+  "revisions": {
+    "1": {
+      "batch": "B1",
+      "effect": "three-way merge {A,B,C} (canonical A); D,E,F,G unchanged",
+      "group_count_before": 7,
+      "group_count_after": 5,
+      "group_delta": -2,
+      "primary_changed": {"indicator--B": ["indicator--B", "indicator--A"], "indicator--C": ["indicator--C", "indicator--A"]},
+      "migration_components": {
+        "merge": [
+          {
+            "old_keys": ["[\"indicator--A\",\"indicates\",\"indicator--E\"]", "[\"indicator--C\",\"indicates\",\"indicator--E\"]"],
+            "new_keys": ["[\"indicator--A\",\"indicates\",\"indicator--E\"]"],
+            "edges": [
+              {"old_row_key": "[\"indicator--A\",\"indicates\",\"indicator--E\"]", "new_row_key": "[\"indicator--A\",\"indicates\",\"indicator--E\"]", "relationship_ids": ["relationship--R1"]},
+              {"old_row_key": "[\"indicator--C\",\"indicates\",\"indicator--E\"]", "new_row_key": "[\"indicator--A\",\"indicates\",\"indicator--E\"]", "relationship_ids": ["relationship--R2"]}
+            ]
+          }
+        ],
+        "migrated_pairs": [
+          ["relationship--R3", "[\"indicator--E\",\"indicates\",\"indicator--C\"]", "[\"indicator--E\",\"indicates\",\"indicator--A\"]"],
+          ["relationship--R4", "[\"indicator--A\",\"indicates\",\"indicator--B\"]", "[\"indicator--A\",\"indicates\",\"indicator--A\"]"],
+          ["relationship--R6", "[\"indicator--C\",\"refers-to\",\"indicator--E\"]", "[\"indicator--A\",\"refers-to\",\"indicator--E\"]"],
+          ["relationship--R8", "[\"indicator--C\",\"uses\",\"indicator--E\"]", "[\"indicator--A\",\"uses\",\"indicator--E\"]"]
+        ]
+      },
+      "contribution_count_modified": [
+        {"row_key": "[\"indicator--A\",\"indicates\",\"indicator--E\"]", "before": 1, "after": 2}
+      ],
+      "self_loop_delta": 1,
+      "self_loop_after": 2,
+      "new_self_loop_relationship_id": "relationship--R4"
+    },
+    "2": {
+      "batch": "B2",
+      "effect": "retract V-BC: split; {A,B} stays merged, C alone, {C,D} not yet merged",
+      "group_count_before": 5,
+      "group_count_after": 6,
+      "group_delta": 1,
+      "primary_changed": {"indicator--C": ["indicator--A", "indicator--C"]},
+      "one_to_many_split": {
+        "old_keys": ["[\"indicator--A\",\"indicates\",\"indicator--E\"]"],
+        "new_keys": ["[\"indicator--A\",\"indicates\",\"indicator--E\"]", "[\"indicator--C\",\"indicates\",\"indicator--E\"]"],
+        "stayed": ["relationship--R1"],
+        "moved_out": ["relationship--R2"]
+      },
+      "migrated_pairs": [
+        ["relationship--R3", "[\"indicator--E\",\"indicates\",\"indicator--A\"]", "[\"indicator--E\",\"indicates\",\"indicator--C\"]"],
+        ["relationship--R6", "[\"indicator--A\",\"refers-to\",\"indicator--E\"]", "[\"indicator--C\",\"refers-to\",\"indicator--E\"]"],
+        ["relationship--R8", "[\"indicator--A\",\"uses\",\"indicator--E\"]", "[\"indicator--C\",\"uses\",\"indicator--E\"]"]
+      ],
+      "self_loop_delta": 0
+    },
+    "3": {
+      "batch": "B3",
+      "effect": "retract V-AB: split {A,B}; merged R4 self loop disappears",
+      "group_count_before": 6,
+      "group_count_after": 7,
+      "group_delta": 1,
+      "primary_changed": {"indicator--B": ["indicator--A", "indicator--B"]},
+      "migrated_pairs": [
+        ["relationship--R4", "[\"indicator--A\",\"indicates\",\"indicator--A\"]", "[\"indicator--A\",\"indicates\",\"indicator--B\"]"]
+      ],
+      "self_loop_delta": -1,
+      "self_loop_after": 1
+    },
+    "4": {
+      "batch": "B4",
+      "effect": "re-merge A,B via V-AB-again: rev2 state for A,B and R4 restored (change-and-revert across 2->4)",
+      "group_count_before": 7,
+      "group_count_after": 6,
+      "group_delta": -1,
+      "primary_changed": {"indicator--B": ["indicator--B", "indicator--A"]},
+      "migrated_pairs": [
+        ["relationship--R4", "[\"indicator--A\",\"indicates\",\"indicator--B\"]", "[\"indicator--A\",\"indicates\",\"indicator--A\"]"]
+      ],
+      "self_loop_delta": 1,
+      "self_loop_after": 2
+    },
+    "5": {
+      "batch": "B5",
+      "effect": "merge {C,D} (canonical C); R5 migrates D->F onto C->F",
+      "group_count_before": 6,
+      "group_count_after": 5,
+      "group_delta": -1,
+      "primary_changed": {"indicator--D": ["indicator--D", "indicator--C"]},
+      "migrated_pairs": [
+        ["relationship--R5", "[\"indicator--D\",\"indicates\",\"indicator--F\"]", "[\"indicator--C\",\"indicates\",\"indicator--F\"]"]
+      ],
+      "self_loop_delta": 0
+    },
+    "6": {
+      "batch": "B6",
+      "effect": "retract V-CD: split {C,D}; inverse many-to-one re-merge of R5",
+      "group_count_before": 5,
+      "group_count_after": 6,
+      "group_delta": 1,
+      "primary_changed": {"indicator--D": ["indicator--C", "indicator--D"]},
+      "migrated_pairs": [
+        ["relationship--R5", "[\"indicator--C\",\"indicates\",\"indicator--F\"]", "[\"indicator--D\",\"indicates\",\"indicator--F\"]"]
+      ],
+      "self_loop_delta": 0
+    },
+    "7": {
+      "batch": "B7",
+      "effect": "empty operations: legal revision with zero change rows",
+      "group_count_before": 6,
+      "group_count_after": 6,
+      "group_delta": 0,
+      "primary_changed": {},
+      "change_count": 0,
+      "self_loop_delta": 0
+    }
+  },
+  "interval_expectations": {
+    "2_to_4": {
+      "zero_impact": false,
+      "net_group_delta": 0,
+      "group_absolute_churn": 2,
+      "net_self_loop_delta": 0,
+      "self_loop_absolute_churn": 2,
+      "reverted_objects": ["indicator--B"],
+      "reverted_relation_keys": ["[\"indicator--A\",\"indicates\",\"indicator--A\"]"]
+    },
+    "3_to_3": {
+      "zero_impact": true,
+      "transitions": [],
+      "net_group_delta": 0,
+      "net_self_loop_delta": 0,
+      "detail_lines": ["cumulative_header"]
+    },
+    "0_to_7": {
+      "net_group_delta": -1,
+      "group_absolute_churn": 7,
+      "start_groups": 7,
+      "end_groups": 6,
+      "start_self_loops": 1,
+      "end_self_loops": 2,
+      "net_self_loop_delta": 1,
+      "net_contribution_total_delta": 0,
+      "reverted_objects": ["indicator--C", "indicator--D"],
+      "transient_relation_keys": [
+        "[\"indicator--A\",\"refers-to\",\"indicator--E\"]",
+        "[\"indicator--A\",\"uses\",\"indicator--E\"]",
+        "[\"indicator--C\",\"indicates\",\"indicator--F\"]",
+        "[\"indicator--E\",\"indicates\",\"indicator--A\"]"
+      ]
+    },
+    "0_to_0": {
+      "zero_impact": true,
+      "net_group_delta": 0,
+      "detail_lines": ["cumulative_header"]
+    }
+  },
+  "scaled": {
+    "scale_env": "SG_IMPACT_SCALE",
+    "default_scale": 400,
+    "transitions": 2,
+    "note": "rev1 merges SCALE independent pairs, rev2 splits them back; every filler row is synthetic and the warehouse is created in a temp dir at runtime"
+  }
+}

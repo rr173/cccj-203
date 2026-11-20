@@ -20,6 +20,7 @@ from . import store as S
 from . import projection as P
 from . import markings as M
 from . import master as MD
+from . import impact as IMP
 
 
 def _now():
@@ -279,6 +280,24 @@ def cmd_master_context(args):
     _emit(MD.package_context(args.master))
 
 
+def cmd_master_impact_summary(args):
+    """Deterministic full JSON impact report for one committed interval."""
+    _emit(IMP.build_summary(args.master, args.start, args.end))
+
+
+def cmd_master_impact_page(args):
+    """One stable-sorted JSONL page of impact detail lines + page envelope."""
+    page = IMP.read_page(
+        args.master, args.start, args.end, args.page_size,
+        scope=args.scope, kind=args.kind, revision=args.revision,
+        page_token=args.page_token)
+    for line in page["page"]:
+        sys.stdout.write(json.dumps(line, ensure_ascii=False) + "\n")
+    envelope = {k: v for k, v in page.items() if k != "page"}
+    envelope["type"] = "page_envelope"
+    sys.stdout.write(json.dumps(envelope, ensure_ascii=False) + "\n")
+
+
 # ------------------------------------------------------------------- parser ----
 
 def build_parser():
@@ -411,6 +430,30 @@ def build_parser():
                         help="show the sealed package summary and context bound to this warehouse")
     sp.add_argument("--master", required=True)
     sp.set_defaults(func=cmd_master_context)
+
+    # ------------------------------------------------- revision impact analysis ----
+    sp = sub.add_parser("master-impact-summary",
+                        help="full deterministic JSON impact report between two committed revisions")
+    sp.add_argument("--master", required=True)
+    sp.add_argument("--from", dest="start", required=True, type=int)
+    sp.add_argument("--to", dest="end", required=True, type=int)
+    sp.set_defaults(func=cmd_master_impact_summary)
+
+    sp = sub.add_parser("master-impact-page",
+                        help="stream one stable-sorted JSONL page of impact detail lines")
+    sp.add_argument("--master", required=True)
+    sp.add_argument("--from", dest="start", required=True, type=int)
+    sp.add_argument("--to", dest="end", required=True, type=int)
+    sp.add_argument("--page-size", dest="page_size", type=int, default=100)
+    sp.add_argument("--scope", choices=list(IMP.FILTER_SCOPES), default="all",
+                    help="all lines, transition lines only, or cumulative lines only")
+    sp.add_argument("--filter-kind", dest="kind", choices=list(IMP.FILTER_KINDS),
+                    default="all",
+                    help="restrict to one line family (object/relation/migration/contribution)")
+    sp.add_argument("--revision", type=int, default=None,
+                    help="restrict to a single transition revision within the interval")
+    sp.add_argument("--page-token", dest="page_token", default=None)
+    sp.set_defaults(func=cmd_master_impact_page)
     return p
 
 
